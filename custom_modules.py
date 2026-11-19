@@ -31,7 +31,7 @@ function mount(c) {
 }
 """
 
-# ---------- 1. Average speed vs time (replaces ChartModule) ----------
+# 1. average speed vs time (replaces ChartModule)
 LINE_JS = """
 var LineModule = function(W, H) {
   var c = document.createElement("canvas"); c.width = W; c.height = H;
@@ -56,7 +56,7 @@ var LineModule = function(W, H) {
 };
 """
 
-# ---------- 2. Space-time diagram ----------
+# 2. space-time diagram
 SPACETIME_JS = """
 var SpaceTimeModule = function(W, H, TITLE) {
   var c = document.createElement("canvas"); c.width = W; c.height = H;
@@ -91,7 +91,7 @@ var SpaceTimeModule = function(W, H, TITLE) {
 };
 """
 
-# ---------- 3. Flow vs density (builds up across resets) ----------
+# 3. flow vs density (builds up across resets)
 FUNDAMENTAL_JS = """
 var FundamentalModule = function(W, H) {
   var c = document.createElement("canvas"); c.width = W; c.height = H;

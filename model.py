@@ -304,7 +304,7 @@ class NaSchTraffic(Model):
         self.space_time = []
         self.total_speed = 0
 
-        # ---------- obstacles ----------
+        # obstacles
         self.obstacle_type = obstacle_type
         self.obstacles = []             # fixed obstacle cells
         self.crossing_obs = None        # the moving obstacle
@@ -331,7 +331,7 @@ class NaSchTraffic(Model):
                              "Speed": lambda a: a.speed},
         )
 
-        # ---------- cars go only in cells that are still free ----------
+        # cars go only in cells that are still free
         cells = [(x, y) for x in range(width) for y in range(height)
                  if self.grid.is_cell_empty((x, y))]
         self.vehicle_quantity = min(vehicle_quantity, len(cells))
@@ -345,7 +345,7 @@ class NaSchTraffic(Model):
         self.running = True
         self.datacollector.collect(self)
 
-    # ---------- helpers ----------
+    # helper functions
     def gap_ahead(self, x, y, limit):
         gap = 0
         for d in range(1, limit + 1):
@@ -401,7 +401,7 @@ class NaSchTraffic(Model):
             self.crossing_timer = self.crossing_dwell
         # else: a car is in the next cell, so wait and retry next step
 
-    # ---------- one time step ----------
+    # one time step
     def step(self):
         if self.schedule.steps == 300:
             self.running = False
