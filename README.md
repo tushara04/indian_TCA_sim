@@ -1,4 +1,6 @@
-# Agent-Based Traffic Model
+# Traffic Cellular Automata Simulation in an Indian Context
+
+the readme is from the model we used as a foundation for our model; will update the readme soon. [the github](https://github.com/ed-ij/nasch_traffic_model)
 
 ## Summary
 
