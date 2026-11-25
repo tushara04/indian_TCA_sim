@@ -254,12 +254,17 @@ class VehicleAgent(Agent):
         if self.speed < self.max_speed:
             self.speed += 1
 
-        # 2. brake to avoid whatever is ahead (a car OR an obstacle)
+        # 2. brake to avoid whatever is ahead (a car, obstacle, or yellow light if stoppable)
         distance_to_next = 0
         (x, y) = self.pos
+        yellow_active = (self.model.obstacle_type == "traffic_light"
+                         and self.model.light_state == "yellow")
         for distance in range(self.max_speed):
             distance += 1
             test_pos = self.model.grid.torus_adj((x + distance, y))
+            # If approaching a yellow light, stop only if we aren't already too close
+            if yellow_active and test_pos[0] == self.model.light_x and distance > self.speed:
+                break
             if self.model.grid.is_cell_empty(test_pos):
                 distance_to_next += 1
                 if distance_to_next == self.speed:
@@ -285,8 +290,9 @@ class NaSchTraffic(Model):
                  general_max_speed=4, slow_prob=0.3, change_prob=1.0,
                  obstacle_type="none",
                  obstacle_lane=0, obstacle_x=30, obstacle_length=1,
-                 crossing_from="lane 0", crossing_x=30,
+                 crossing_from="lane 0",
                  crossing_dwell=4, crossing_gap=15,
+                 light_x=30, red_start_step=40, red_duration=20,
                  seed=None):
         super().__init__(seed=seed)
         self.height = height
@@ -307,22 +313,26 @@ class NaSchTraffic(Model):
         # obstacles
         self.obstacle_type = obstacle_type
         self.obstacles = []             # fixed obstacle cells
-        self.crossing_obs = None        # the moving obstacle
-        self.crossing_lane = None       # None = currently off the road
+        self.crossing_obs = []          # active crossing pedestrians
+        self.crossing_counter = 0       # unique id counter for pedestrians
         self.crossing_from = crossing_from
-        self.crossing_x = min(crossing_x, width - 1)
         self.crossing_dwell = crossing_dwell
         self.crossing_gap = crossing_gap
-        self.crossing_timer = crossing_gap   # steps until the first appearance
-
+        self.crossing_timer = crossing_gap  # can make it a 1 if i want a pedestrian to appear right at the start
+        
+        # single-event traffic light
+        self.light_x = min(light_x, width - 1)
+        self.red_start_step = red_start_step
+        self.red_duration = red_duration
+        self.yellow_duration = 3
+        self.light_state = "green"
+        self.light_obs = []             # active red-light blockers on grid
         if obstacle_type == "fixed":
             lane = min(obstacle_lane, self.lanes - 1)
             for i in range(min(obstacle_length, width - 1)):
                 obs = ObstacleAgent("obstacle_%d" % i, self, "fixed")
                 self.grid.place_agent(obs, ((obstacle_x + i) % width, lane))
                 self.obstacles.append(obs)
-        elif obstacle_type == "crossing":
-            self.crossing_obs = ObstacleAgent("crossing", self, "crossing")
 
         self.datacollector = DataCollector(
             model_reporters={"Average_Speed": "average_speed",
@@ -368,38 +378,74 @@ class NaSchTraffic(Model):
         """Obstacles currently on the road (used by the plots)."""
         if self.obstacle_type == "fixed":
             return self.obstacles
-        if self.obstacle_type == "crossing" and self.crossing_lane is not None:
-            return [self.crossing_obs]
+        if self.obstacle_type == "crossing":
+            return [p["agent"] for p in self.crossing_obs]
+        if self.obstacle_type == "traffic_light":
+            return self.light_obs
         return []
 
+    def update_light(self):
+        t = self.schedule.steps + 1
+        yellow_start = max(1, self.red_start_step - self.yellow_duration)
+        red_end = self.red_start_step + self.red_duration
+
+        if yellow_start <= t < self.red_start_step:
+            self.light_state = "yellow"
+        elif self.red_start_step <= t < red_end:
+            self.light_state = "red"
+            occupied_lanes = {obs.pos[1] for obs in self.light_obs}
+            for y in range(self.lanes):
+                if y not in occupied_lanes and self.grid.is_cell_empty((self.light_x, y)):
+                    obs = ObstacleAgent("light_%d" % y, self, "red_light")
+                    self.grid.place_agent(obs, (self.light_x, y))
+                    self.light_obs.append(obs)
+        else:
+            if self.light_state != "green":
+                self.light_state = "green"
+                for obs in self.light_obs:
+                    self.grid.remove_agent(obs)
+                self.light_obs = []
+
     def update_crossing(self):
-        obs = self.crossing_obs
-        cx = self.crossing_x
-        start = 0 if self.crossing_from == "lane 0" else self.lanes - 1
-        direction = 1 if start == 0 else -1
+        # 1. advance all currently crossing pedestrians independently
+        remaining = []
+        for p in self.crossing_obs:
+            p["timer"] -= 1
+            if p["timer"] > 0:
+                remaining.append(p)
+                continue
 
+            nxt = p["lane"] + p["dir"]
+            if nxt < 0 or nxt >= self.lanes:       # finished crossing the whole road
+                self.grid.remove_agent(p["agent"])
+            elif self.grid.is_cell_empty((p["x"], nxt)):
+                self.grid.move_agent(p["agent"], (p["x"], nxt))
+                p["lane"] = nxt
+                p["timer"] = self.crossing_dwell
+                remaining.append(p)
+            else:
+                remaining.append(p)                # blocked by a car; retry next step
+        self.crossing_obs = remaining
+
+        # 2. spawn new pedestrians on their own independent timer
         self.crossing_timer -= 1
-
-        if self.crossing_lane is None:             # waiting off-road
-            if self.crossing_timer <= 0 and self.grid.is_cell_empty((cx, start)):
+        if self.crossing_timer <= 0:
+            start = 0 if self.crossing_from == "lane 0" else self.lanes - 1
+            direction = 1 if start == 0 else -1
+            free_xs = [x for x in range(self.width) if self.grid.is_cell_empty((x, start))]
+            if free_xs:
+                cx = self.random.choice(free_xs)
+                obs = ObstacleAgent("crossing_%d" % self.crossing_counter, self, "crossing")
+                self.crossing_counter += 1
                 self.grid.place_agent(obs, (cx, start))
-                self.crossing_lane = start
-                self.crossing_timer = self.crossing_dwell
-            return
-
-        if self.crossing_timer > 0:                # still dwelling in this lane
-            return
-
-        nxt = self.crossing_lane + direction
-        if nxt < 0 or nxt >= self.lanes:           # crossed the whole road
-            self.grid.remove_agent(obs)
-            self.crossing_lane = None
-            self.crossing_timer = self.crossing_gap
-        elif self.grid.is_cell_empty((cx, nxt)):
-            self.grid.move_agent(obs, (cx, nxt))
-            self.crossing_lane = nxt
-            self.crossing_timer = self.crossing_dwell
-        # else: a car is in the next cell, so wait and retry next step
+                self.crossing_obs.append({
+                    "agent": obs,
+                    "x": cx,
+                    "lane": start,
+                    "dir": direction,
+                    "timer": self.crossing_dwell,
+                })
+                self.crossing_timer = self.crossing_gap
 
     # one time step
     def step(self):
@@ -409,6 +455,8 @@ class NaSchTraffic(Model):
         # 0. obstacle moves first so cars react to it this same step
         if self.obstacle_type == "crossing":
             self.update_crossing()
+        elif self.obstacle_type == "traffic_light":
+            self.update_light()
 
         # 1. lane changes
         self.lane_changes = 0

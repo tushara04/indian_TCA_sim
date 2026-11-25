@@ -3,7 +3,7 @@ from mesa.visualization.modules import CanvasGrid, TextElement
 from mesa.visualization.UserParam import UserSettableParameter
 
 from model import NaSchTraffic, ObstacleAgent
-from custom_modules import AvgSpeedPlot, SpaceTimePlot, FundamentalPlot
+from custom_modules import AvgSpeedPlot, SpaceTimePlot, FundamentalPlot, ParamFilter
 
 # Define some colours for later use
 # Red
@@ -58,7 +58,12 @@ def vehicle_draw(agent):
     if agent is None:
         return
     if isinstance(agent, ObstacleAgent):
-        color = "#000000" if agent.kind == "fixed" else "#6A0DAD"   # black / purple
+        if agent.kind == "fixed":
+            color = "#000000"       # black
+        elif agent.kind == "red_light":
+            color = "#D90429"       # red
+        else:
+            color = "#6A0DAD"       # purple (crossing)
         return {"Shape": "rect", "w": 1, "h": 1, "Filled": "true",
                 "Layer": 0, "Color": color}
 
@@ -72,7 +77,7 @@ def vehicle_draw(agent):
     portrayal["Color"] = color
     return portrayal
 
-LANES = 5
+LANES = 10
 CANVAS_W = 1000
 
 # define the elements of the visualisation
@@ -92,7 +97,7 @@ model_params = {
     "change_prob": UserSettableParameter("slider", "Lane-change probability", 1.0, 0.0, 1.0, 0.1),
 
     "obstacle_type": UserSettableParameter("choice", "Obstacle type", value="none",
-                                           choices=["none", "fixed", "crossing"]),
+                                           choices=["none", "fixed", "crossing", "traffic_light"]),
     # fixed obstacle
     "obstacle_lane": UserSettableParameter("slider", "Fixed: lane", 0, 0, max(LANES - 1, 1), 1),
     "obstacle_x": UserSettableParameter("slider", "Fixed: position", 30, 0, 59, 1),
@@ -100,18 +105,22 @@ model_params = {
     # crossing obstacle
     "crossing_from": UserSettableParameter("choice", "Crossing: starts at", value="lane 0",
                                            choices=["lane 0", "last lane"]),
-    "crossing_x": UserSettableParameter("slider", "Crossing: position", 30, 0, 59, 1),
     "crossing_dwell": UserSettableParameter("slider", "Crossing: steps per lane", 4, 1, 15, 1),
-    "crossing_gap": UserSettableParameter("slider", "Crossing: steps between crossings", 15, 1, 100, 1),
+    "crossing_gap": UserSettableParameter("slider", "Crossing: spawn interval (steps)", 15, 1, 100, 1),
+    # traffic light (single event)
+    "light_x": UserSettableParameter("slider", "Light: position", 30, 0, 59, 1),
+    "red_start_step": UserSettableParameter("slider", "Light: red starts at step", 40, 1, 250, 1),
+    "red_duration": UserSettableParameter("slider", "Light: red duration (steps)", 20, 1, 100, 1),
 }
 
 # instantiate server
 server = ModularServer(
     NaSchTraffic,
-    [canvas_element, legend_element, agent_element, speed_chart, *spacetime_plots, fundamental_plot],
+    [ParamFilter(), canvas_element, legend_element, agent_element, speed_chart, *spacetime_plots, fundamental_plot],
     "Traffic Model",
     model_params,
 )
+
 # set server port
 server.port = 8555
 # edited

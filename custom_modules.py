@@ -165,3 +165,80 @@ class FundamentalPlot(VisualizationElement):
         recent = model.averages[-50:]
         mean_v = sum(recent) / len(recent) if recent else 0
         return {"density": density, "flow": density * mean_v, "t": model.schedule.steps}
+
+PARAM_FILTER_JS = """
+(function() {
+  var GROUPS = {
+    fixed: ["obstacle_lane", "obstacle_x", "obstacle_length"],
+    crossing: ["crossing_from", "crossing_dwell", "crossing_gap"],
+    traffic_light: ["light_x", "red_start_step", "red_duration"]
+  };
+  var ALL_KEYS = [].concat(GROUPS.fixed, GROUPS.crossing, GROUPS.traffic_light);
+  var currentMode = "none";
+
+  function findRow(key) {
+    var ctrl = (
+      document.getElementById(key + "_id") ||
+      document.getElementById(key) ||
+      document.querySelector('[name="' + key + '"]')
+    );
+    if (!ctrl) return null;
+    return (
+      ctrl.closest(".input-group") ||
+      ctrl.closest(".form-group") ||
+      ctrl.parentElement
+    );
+  }
+
+  function applyVisibility() {
+    var active = GROUPS[currentMode] || [];
+    ALL_KEYS.forEach(function(key) {
+      var row = findRow(key);
+      if (!row) return;
+      var show = active.indexOf(key) !== -1;
+      row.style.display = show ? "" : "none";
+      var prev = row.previousElementSibling;
+      if (prev && (prev.tagName === "P" || prev.tagName === "LABEL")) {
+        prev.style.display = show ? "" : "none";
+      }
+    });
+  }
+
+  // Intercept Mesa's WebSocket submit_params messages directly
+  var origSend = WebSocket.prototype.send;
+  WebSocket.prototype.send = function(data) {
+    try {
+      var msg = JSON.parse(data);
+      if (msg && msg.type === "submit_params" && msg.param === "obstacle_type") {
+        currentMode = msg.value;
+        applyVisibility();
+      }
+    } catch (e) {}
+    return origSend.apply(this, arguments);
+  };
+
+  function init() {
+    if (!findRow("obstacle_lane")) {
+      setTimeout(init, 100);
+      return;
+    }
+    applyVisibility();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+"""
+
+class ParamFilter(VisualizationElement):
+    package_includes = []
+    local_includes = []
+
+    def __init__(self):
+        self.js_code = PARAM_FILTER_JS + "\nelements.push({render: function(){}, reset: function(){}});"
+
+    def render(self, model):
+        return None
