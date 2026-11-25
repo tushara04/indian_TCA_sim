@@ -56,38 +56,93 @@ var LineModule = function(W, H) {
 };
 """
 
-# 2. space-time diagram
+# 2. space-time diagram (Nagel & Schreckenberg integer-velocity ASCII style, x = space, -y = time)
+
 SPACETIME_JS = """
 var SpaceTimeModule = function(W, H, TITLE) {
-  var c = document.createElement("canvas"); c.width = W; c.height = H;
-  c.style.border = "1px solid #ccc"; mount(c);
-  var ctx = c.getContext("2d"), rows = [], tick = 0, N = 60, VMAX = 4, MAXR = 100;
-  var pw = W - PL - PR, ph = H - PT - PB;
-  function draw() {
-    var t0 = tick - rows.length;
-    drawAxes(ctx, W, H, "Position (cell)", "Time step (downwards)",
-             TITLE + " (colour = speed)", [0, N, 0], [t0 + MAXR, t0, 0]);
-    var cw = pw / N, rh = ph / MAXR;
-    rows.forEach(function(row, i) {
-      row.obs.forEach(function(x) {
-        ctx.fillStyle = "#000";
-        ctx.fillRect(PL + x * cw, PT + i * rh, Math.max(1, cw), Math.max(1, rh));
-      });
-      row.cars.forEach(function(car) {
-        var hue = 120 * car[1] / Math.max(1, VMAX);
-        ctx.fillStyle = "hsl(" + hue + ",90%,42%)";
-        ctx.fillRect(PL + car[0] * cw, PT + i * rh, Math.max(1, cw), Math.max(1, rh));
-      });
+  var wrap = document.createElement("div");
+  wrap.style.width = W + "px";
+  wrap.style.border = "1px solid #ccc";
+  wrap.style.background = "#fafafa";
+  wrap.style.marginBottom = "8px";
+  wrap.style.fontFamily = "monospace";
+
+  var header = document.createElement("div");
+  header.style.padding = "4px 8px";
+  header.style.font = "bold 12px sans-serif";
+  header.style.textAlign = "center";
+  header.style.borderBottom = "1px solid #ddd";
+  header.textContent = "Space — " + TITLE.replace("Space-time, ", "");
+  wrap.appendChild(header);
+
+  var body = document.createElement("div");
+  body.style.display = "flex";
+  body.style.background = "#fff";
+  wrap.appendChild(body);
+
+  // Left vertical y-axis label ("Time t ↓")
+  var yAxis = document.createElement("div");
+  yAxis.style.writingMode = "vertical-rl";
+  yAxis.style.transform = "rotate(180deg)";
+  yAxis.style.textAlign = "center";
+  yAxis.style.padding = "6px 4px";
+  yAxis.style.font = "11px sans-serif";
+  yAxis.style.color = "#444";
+  yAxis.style.borderRight = "1px solid #eee";
+  yAxis.textContent = "← Time step (t)";
+  body.appendChild(yAxis);
+
+  var scrollBox = document.createElement("div");
+  scrollBox.style.flex = "1";
+  scrollBox.style.height = H + "px";
+  scrollBox.style.overflowY = "auto";
+  scrollBox.style.overflowX = "auto";
+  body.appendChild(scrollBox);
+
+  var pre = document.createElement("pre");
+  pre.style.margin = "0";
+  pre.style.padding = "6px 8px";
+  pre.style.fontSize = "12px";
+  pre.style.lineHeight = "1.15";
+  pre.style.background = "#fff";
+  scrollBox.appendChild(pre);
+  mount(wrap);
+
+  var lines = [], tick = 0;
+
+  function formatRow(t, N, vmax, cars, obs) {
+    var cells = new Array(N);
+    for (var i = 0; i < N; i++) {
+      cells[i] = '<span style="color:#bbb;">.</span>';
+    }
+    obs.forEach(function(x) {
+      if (x >= 0 && x < N) {
+        cells[x] = '<span style="color:#000;font-weight:bold;">X</span>';
+      }
     });
+    var half = Math.floor(vmax / 2);
+    cars.forEach(function(car) {
+      var x = car[0], v = car[1];
+      if (x >= 0 && x < N) {
+        var color = (v === 0) ? "#d90429" : (v > half ? "#1b9a00" : "#d97706");
+        cells[x] = '<span style="color:' + color + ';font-weight:bold;">' + v + '</span>';
+      }
+    });
+    var tLabel = String(t).padStart(3, " ") + " | ";
+    return '<span style="color:#666;">' + tLabel + '</span>' + cells.join(" ");
   }
+
   this.render = function(d) {
-    N = d.width; VMAX = d.vmax; tick++;
-    rows.push({cars: d.cars, obs: d.obstacles});
-    if (rows.length > MAXR) rows.shift();
-    draw();
+    tick++;
+    lines.push(formatRow(tick, d.width, d.vmax, d.cars, d.obstacles));
+    pre.innerHTML = lines.join("\\n");
+    scrollBox.scrollTop = scrollBox.scrollHeight;
   };
-  this.reset = function() { rows = []; tick = 0; draw(); };
-  draw();
+  this.reset = function() {
+    lines = [];
+    tick = 0;
+    pre.innerHTML = "";
+  };
 };
 """
 
@@ -144,15 +199,17 @@ class SpaceTimePlot(VisualizationElement):
             'elements.push(new SpaceTimeModule(%d,%d,"Space-time, lane %d"));' % (w, h, lane))
 
     def render(self, model):
+        cars = model.pre_move_cars if model.pre_move_cars else [
+            (a.pos[0], a.pos[1], a.speed) for a in model.schedule.agents
+        ]
         return {
             "width": model.width,
             "vmax": model.general_max_speed,
-            "cars": [[int(a.pos[0]), int(a.speed)]
-                     for a in model.schedule.agents if a.pos[1] == self.lane],
+            "cars": [[int(x), int(v)] for (x, y, v) in cars if y == self.lane],
             "obstacles": [int(o.pos[0]) for o in model.active_obstacles()
                           if o.pos[1] == self.lane],
         }
-
+        
 class FundamentalPlot(VisualizationElement):
     package_includes = []
     local_includes = []

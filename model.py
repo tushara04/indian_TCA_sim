@@ -280,6 +280,7 @@ class VehicleAgent(Agent):
         # 4. compute (but don't yet make) the move
         self._next_pos = self.model.grid.torus_adj((x + self.speed, y))
         self.model.total_speed += self.speed
+        self.model.pre_move_cars.append((x, y, self.speed))
 
     def advance(self):
         self.model.grid.move_agent(self, self._next_pos)
@@ -308,6 +309,7 @@ class NaSchTraffic(Model):
         self.average_speed = 0.0
         self.averages = []
         self.space_time = []
+        self.pre_move_cars = []
         self.total_speed = 0
 
         # obstacles
@@ -468,6 +470,7 @@ class NaSchTraffic(Model):
 
         # 2. normal NaSch update
         self.total_speed = 0
+        self.pre_move_cars = []
         self.schedule.step()
         n = self.schedule.get_agent_count()
         self.average_speed = self.total_speed / n if n > 0 else 0

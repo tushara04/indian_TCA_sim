@@ -16,17 +16,20 @@ FAST_COLOR = ["#2BCB00", "#8EE484"]
 
 class AgentElement(TextElement):
     """
-    Display text for the average speed of the agents.
+    Display text for the number of agents, density, and average speed.
     """
 
     def __init__(self):
         pass
 
     def render(self, model):
-        text_1 = "Number of agents: " + str(model.schedule.get_agent_count()) + "   "
-        text_2 = "Average Speed " + str(model.average_speed) + "   "
-        return text_1 + text_2
-
+        count = model.schedule.get_agent_count()
+        density = count / (model.width * model.lanes)
+        text_1 = "Number of agents: %d &nbsp;&nbsp;&nbsp;" % count
+        text_2 = "Density: %.3f &nbsp;&nbsp;&nbsp;" % density
+        text_3 = "Average Speed: %.2f" % model.average_speed
+        return text_1 + text_2 + text_3
+        
 class LegendElement(TextElement):
     """Colour legend that updates with the max-speed slider."""
 
